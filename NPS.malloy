@@ -1,0 +1,97 @@
+// https://developer.nps.gov/api/v1/INSERT GET CODE HERE?&api_key=vOnHCqDLYJDkh81xyqwu6TZFvnH8bikKdpLNczUY
+source: activities is duckdb.table('activities.csv') extend {
+    measure: id_count is count()
+    primary_key: column0
+} 
+
+-- SET PK FOR JOINING
+source: feespasses is duckdb.table('feespasses.csv') extend {
+    primary_key: parkCode
+}
+
+source: alerts is duckdb.table('alerts.csv') extend {
+    
+    measure: alert_count is count()
+    view: by_category is {
+        group_by: category
+        aggregate: alert_count is count()
+    }
+}
+
+-- JOIN ACTIVITIES_PARKS w/ PARKS
+source: activities_parks is duckdb.table('activities_parks.csv') extend {
+    measure: park_count is count()
+    dimension: designation is column2
+    dimension: activity_name is column1
+    -- FIXME: remove columns
+}
+
+-- JOINING TABLES --
+source: park_data is duckdb.table('park_data.csv') extend { 
+     primary_key: id
+     join_one: feespasses on feespasses.parkCode = parkCode 
+     join_cross: alerts on alerts.parkCode = parkCode
+     join_cross: activities_parks on activities_parks.column5 = parkCode
+     measure: park_count is count()
+     view: by_state is {
+        group_by: states
+        aggregate: park_count
+     }
+ }
+
+
+# bar_chart
+run: park_data -> {
+    group_by: states  
+    aggregate: park_count
+    limit: 10
+}
+
+-- VISUALIZATION: DENSITY OF FREE PARKS
+# shape_map
+run: park_data -> by_state + { 
+    where: feespasses.isFeeFreePark = true
+}
+
+
+run: park_data -> {
+    group_by: designation
+    nest: by_activity is {
+        group_by: activities_parks.activity_name
+        aggregate: park_count
+        top: 5
+    }
+}
+
+# line_chart
+run: alerts -> {
+    group_by: lastIndexedDate.day
+    aggregate: alert_count
+    group_by: category
+}
+
+# bar_chart
+run: alerts -> {
+    group_by:  parkCode
+    aggregate: alert_count
+    having: alert_count > 1
+    group_by: category
+    }
+
+run: park_data -> by_state + {
+    group_by: feespasses.cashless, 
+    aggregate: multiSitePass is count(feespasses.relatedMultiSitePasses)
+    order_by: states
+}
+
+# bar_chart
+run: park_data -> {
+    group_by: activities_parks.activity_name
+    aggregate: park_count
+    having: park_count > 2
+    group_by: states
+}
+
+run: park_data -> {
+    group_by: states
+}
